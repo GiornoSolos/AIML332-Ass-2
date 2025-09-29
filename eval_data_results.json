@@ -1,0 +1,46 @@
+{
+  "total_probability": 0.9374575090910753,
+  "average_probability": 0.11718218863638441,
+  "results": [
+    {
+      "prompt": "Once upon a time, there was a little",
+      "expected_response": " girl named Lily",
+      "probability": 3.534172356012277e-05
+    },
+    {
+      "prompt": "The sun was shining and the birds were",
+      "expected_response": " singing",
+      "probability": 0.37531110644340515
+    },
+    {
+      "prompt": "She went to the park to",
+      "expected_response": " play with her friends",
+      "probability": 0.00019690724730025977
+    },
+    {
+      "prompt": "The dog wagged its tail and",
+      "expected_response": " barked happily",
+      "probability": 0.00010423850471852347
+    },
+    {
+      "prompt": "Mom said it was time to",
+      "expected_response": " go home",
+      "probability": 0.007944664917886257
+    },
+    {
+      "prompt": "At the end of the day, she felt",
+      "expected_response": " happy and tired",
+      "probability": 5.189954777051753e-07
+    },
+    {
+      "prompt": "The little boy found a",
+      "expected_response": " red ball",
+      "probability": 1.5749401427456178e-05
+    },
+    {
+      "prompt": "They all lived happily",
+      "expected_response": " ever after",
+      "probability": 0.5538489818572998
+    }
+  ]
+}

@@ -367,8 +367,6 @@ class GPT(nn.Module):
             # Use log_softmax for numerical stability
             log_probs = F.log_softmax(logits, dim=-1)
             token_log_prob = log_probs[0, idx_next[0, 0].item()].item()
-            token_prob = probs[0, idx_next[0, 0].item()].item()
-            print(f"Token {i+1}: prob={token_prob:.8f}, log_prob={token_log_prob:.8f}")
             log_prob_sum += token_log_prob
         
             # Append sampled token to sequence
