@@ -7,7 +7,47 @@ from contextlib import nullcontext
 import torch
 import tiktoken
 from model import GPTConfig, GPT
+import matplotlib.pyplot as plt
+import torch.nn.functional as F
 
+def show_token_probabilities(logits, selected_token_idx, tokenizer, top_k=10):
+    """
+    Display a bar chart of top-k token probabilities.
+    """
+    probs = F.softmax(logits, dim=-1)
+    top_probs, top_indices = torch.topk(probs, top_k)
+    
+    top_probs = top_probs.cpu().numpy()
+    top_indices = top_indices.cpu().numpy()
+    
+    token_strings = []
+    for idx in top_indices:
+        token_str = tokenizer.decode([idx])
+        token_str = token_str.replace('\n', '\\n').replace('\t', '\\t')
+        token_strings.append(token_str[:20])
+    
+    colors = ['green' if idx == selected_token_idx else 'blue' 
+              for idx in top_indices]
+    
+    plt.figure(figsize=(12, 6))
+    bars = plt.bar(range(top_k), top_probs, color=colors)
+    plt.xlabel('Token', fontsize=12)
+    plt.ylabel('Probability', fontsize=12)
+    plt.title('Top 10 Token Probabilities (Green = Selected)', fontsize=14)
+    plt.xticks(range(top_k), token_strings, rotation=45, ha='right')
+    plt.tight_layout()
+    
+    for i, (bar, prob) in enumerate(zip(bars, top_probs)):
+        plt.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                f'{prob:.4f}', ha='center', va='bottom', fontsize=9)
+    
+    plt.show()
+    
+    print("\nTop 10 Token Probabilities")
+    for i, (token_str, prob, idx) in enumerate(zip(token_strings, top_probs, top_indices)):
+        marker = " <-- SELECTED" if idx == selected_token_idx else ""
+        print(f"{i+1}. '{token_str}' (idx={idx}): {prob:.6f}{marker}")
+    
 # -----------------------------------------------------------------------------
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
 out_dir = 'out' # ignored if init_from is not 'resume'
@@ -20,6 +60,7 @@ seed = 1337
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32' or 'bfloat16' or 'float16'
 compile = False # use PyTorch 2.0 to compile the model to be faster
+show_probs= False #Display token probability Distribution
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
 
@@ -84,6 +125,38 @@ x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
-            y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+          if show_probs:
+                # New Generation loop with visualization
+                y = x
+                for _ in range(max_new_tokens):
+                    # Crop context if needed
+                    idx_cond = y if y.size(1) <= model.config.block_size else y[:, -model.config.block_size:]
+                    
+                    # Forward pass
+                    logits, _ = model(idx_cond)
+                    logits = logits[:, -1, :] / temperature
+                    
+                    # Apply top-k filtering if specified
+                    if top_k is not None:
+                        v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                        logits[logits < v[:, [-1]]] = -float('Inf')
+                    
+                    # Sample from distribution
+                    probs = F.softmax(logits, dim=-1)
+                    idx_next = torch.multinomial(probs, num_samples=1)
+                    
+                    # Show probabilities for this step
+                    show_token_probabilities(logits[0], idx_next[0].item(), enc, top_k=10)
+                    
+                    # Append to sequence
+                    y = torch.cat((y, idx_next), dim=1)
+                
+                print(decode(y[0].tolist()))
+                print('---------------')
+
+          else:
+            #Generation that returns probability 
+            y, prob = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
             print(decode(y[0].tolist()))
+            print(f'Sequence probability: {prob:.6e}')
             print('---------------')

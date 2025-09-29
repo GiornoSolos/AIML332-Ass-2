@@ -10,7 +10,7 @@ https://github.com/huggingface/transformers/blob/main/src/transformers/models/gp
 import math
 import inspect
 from dataclasses import dataclass
-
+from typing import Optional, List, Tuple
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -303,28 +303,77 @@ class GPT(nn.Module):
         return mfu
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, 
+             fixed_response: Optional[List[int]] = None) -> Tuple[torch.Tensor, float]:
         """
-        Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
-        the sequence max_new_tokens times, feeding the predictions back into the model each time.
-        Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+        Generate a sequence of tokens and return both the sequence and its probability.
+    
+        Args:
+            idx: Input token indices (B, T)
+            max_new_tokens: Number of tokens to generate
+            temperature: Sampling temperature (lower = more deterministic)
+            top_k: If set, only sample from top k tokens
+            fixed_response: Optional list of token indices to generate instead of sampling
+                       If provided, computes probability of this specific sequence
+    
+        Returns:
+            Tuple of (generated_tokens, sequence_probability)
+            - generated_tokens: Tensor of shape (B, T+max_new_tokens)
+            - sequence_probability: Float probability of the generated sequence
         """
-        for _ in range(max_new_tokens):
-            # if the sequence context is growing too long we must crop it at block_size
+        # Initialize log probability accumulator
+        log_prob_sum = 0.0
+    
+        # If fixed_response provided, validate it
+        if fixed_response is not None:
+            if len(fixed_response) != max_new_tokens:
+                raise ValueError(
+                    f"fixed_response length ({len(fixed_response)}) must equal "
+                    f"max_new_tokens ({max_new_tokens})"
+                )
+            # Convert to tensor if needed
+            if not isinstance(fixed_response, torch.Tensor):
+                fixed_response = torch.tensor(fixed_response, dtype=torch.long, 
+                                         device=idx.device)
+    
+        #Generation loop
+        for i in range(max_new_tokens):
+            # Crop context if needed (for models with fixed context length)
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
-            # forward the model to get the logits for the index in the sequence
+        
+            # Forward pass through model
             logits, _ = self(idx_cond)
-            # pluck the logits at the final step and scale by desired temperature
+        
+            # Get logits for the last position
             logits = logits[:, -1, :] / temperature
-            # optionally crop the logits to only the top k options
+        
+            # Apply top-k filtering if specified
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
-            # apply softmax to convert logits to (normalized) probabilities
+        
+            # Convert to probabilities
             probs = F.softmax(logits, dim=-1)
-            # sample from the distribution
-            idx_next = torch.multinomial(probs, num_samples=1)
-            # append sampled index to the running sequence and continue
+        
+            # Select next token
+            if fixed_response is not None:
+                # Use the specified token from fixed_response
+                idx_next = fixed_response[i].unsqueeze(0).unsqueeze(0)
+            else:
+                # Sample from the distribution
+                idx_next = torch.multinomial(probs, num_samples=1)
+        
+            # Compute log probability of the selected token
+            # Use log_softmax for numerical stability
+            log_probs = F.log_softmax(logits, dim=-1)
+            token_log_prob = log_probs[0, idx_next[0, 0].item()].item()
+            log_prob_sum += token_log_prob
+        
+            # Append sampled token to sequence
             idx = torch.cat((idx, idx_next), dim=1)
-
-        return idx
+    
+        # Convert log probability sum to probability
+        # P(sequence) = exp(sum of log probabilities)
+        sequence_probability = torch.exp(torch.tensor(log_prob_sum)).item()
+    
+        return idx, sequence_probability
