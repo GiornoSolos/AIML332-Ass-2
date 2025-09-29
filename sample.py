@@ -9,14 +9,14 @@ import tiktoken
 from model import GPTConfig, GPT
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
+import time
 
 def show_token_probabilities(logits, selected_token_idx, tokenizer, top_k=10):
     """
-    Display a bar chart of top-k token probabilities.
+    Display a bar chart of top-k token probabilities and save to file.
     """
     probs = F.softmax(logits, dim=-1)
     top_probs, top_indices = torch.topk(probs, top_k)
-    
     top_probs = top_probs.cpu().numpy()
     top_indices = top_indices.cpu().numpy()
     
@@ -26,7 +26,8 @@ def show_token_probabilities(logits, selected_token_idx, tokenizer, top_k=10):
         token_str = token_str.replace('\n', '\\n').replace('\t', '\\t')
         token_strings.append(token_str[:20])
     
-    colors = ['green' if idx == selected_token_idx else 'blue' 
+    # FIX: Convert both to int for proper comparison
+    colors = ['green' if int(idx) == int(selected_token_idx) else 'blue' 
               for idx in top_indices]
     
     plt.figure(figsize=(12, 6))
@@ -41,13 +42,17 @@ def show_token_probabilities(logits, selected_token_idx, tokenizer, top_k=10):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                 f'{prob:.4f}', ha='center', va='bottom', fontsize=9)
     
-    plt.show()
+    # Save to file
+    filename = f'token_probs_{int(time.time()*1000)}.png'
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    print(f"\nChart saved to: {filename}")
+    plt.close()
     
-    print("\nTop 10 Token Probabilities")
+    print("\n=== Top 10 Token Probabilities ===")
     for i, (token_str, prob, idx) in enumerate(zip(token_strings, top_probs, top_indices)):
-        marker = " <-- SELECTED" if idx == selected_token_idx else ""
+        marker = " <-- SELECTED" if int(idx) == int(selected_token_idx) else ""
         print(f"{i+1}. '{token_str}' (idx={idx}): {prob:.6f}{marker}")
-    
+        
 # -----------------------------------------------------------------------------
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
 out_dir = 'out' # ignored if init_from is not 'resume'
