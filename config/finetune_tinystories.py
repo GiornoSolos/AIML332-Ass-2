@@ -6,7 +6,7 @@ wandb_log = False
 
 init_from = 'gpt2'
 
-max_iters = 1000  # Reduced from 2000 to compensate for smaller dataset
+max_iters = 1000 # reduced for quicker testing
 learning_rate = 5e-5
 batch_size = 1  # Reduced to 1 to avoid OOM errors
 gradient_accumulation_steps = 32  # Increased to maintain effective batch size
