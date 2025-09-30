@@ -66,6 +66,8 @@ device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32' or 'bfloat16' or 'float16'
 compile = False # use PyTorch 2.0 to compile the model to be faster
 show_probs= False #Display token probability Distribution
+use_beam_search = False  # use Beam Search
+beam_width = 5 # beam width for Beam Search
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
 
@@ -161,7 +163,8 @@ with torch.no_grad():
 
           else:
             #Generation that returns probability 
-            y, prob = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            y, prob = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k,
+                        use_beam_search=use_beam_search, beam_width=beam_width)
             print(decode(y[0].tolist()))
             print(f'Sequence probability: {prob:.6e}')
             print('---------------')

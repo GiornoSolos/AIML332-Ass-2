@@ -301,6 +301,94 @@ class GPT(nn.Module):
         flops_promised = 312e12 # A100 GPU bfloat16 peak flops is 312 TFLOPS
         mfu = flops_achieved / flops_promised
         return mfu
+    
+    #Task 3.2 Beam Search implementation
+    @torch.no_grad()
+    def beam_search(self, idx, max_new_tokens, beam_width=5, temperature=1.0, 
+                length_penalty=1.0) -> List[Tuple[torch.Tensor, float, float]]:
+        """
+        Generate text using beam search instead of greedy sampling.
+    
+        Beam search maintains k hypotheses (beams) and expands the k most likely
+        sequences at each step, rather than greedily selecting the single best token.
+    
+        Args:
+            idx: Input token indices (B, T) - batch size should be 1
+            max_new_tokens: Number of tokens to generate
+            beam_width: Number of beams to maintain (k)
+            temperature: Sampling temperature for logits
+            length_penalty: Penalty for longer sequences (>1 favors longer, <1 favors shorter)
+    
+        Returns:
+            List of (sequence, score) tuples, sorted by score (best first)
+        """
+        if idx.size(0) != 1:
+            raise ValueError("Beam search currently only supports batch size 1")
+    
+        device = idx.device
+        vocab_size = self.config.vocab_size
+    
+        # Initialize beams: [(sequence, cumulative_log_prob)]
+        #Start with the input sequence
+        beams = [(idx[0], 0.0)]
+    
+        for step in range(max_new_tokens):
+            all_candidates = []
+        
+            # Expand each beam
+            for seq, score in beams:
+                # Prepare input
+                seq_input = seq.unsqueeze(0)
+                idx_cond = seq_input if seq_input.size(1) <= self.config.block_size else seq_input[:, -self.config.block_size:]
+            
+                # Forward pass
+                logits, _ = self(idx_cond)
+                logits = logits[:, -1, :] / temperature
+            
+                # Get log probabilities
+                log_probs = F.log_softmax(logits, dim=-1)[0]
+            
+                # Get top beam_width candidates for this beam
+                top_log_probs, top_indices = torch.topk(log_probs, beam_width)
+            
+                # Create new candidates
+                for i in range(beam_width):
+                    token = top_indices[i]
+                    token_log_prob = top_log_probs[i].item()
+                
+                    # Create new sequence
+                    new_seq = torch.cat([seq, token.unsqueeze(0)])
+                
+                    # Calculate new score with length penalty
+                    # Score = cumulative_log_prob / (sequence_length ** length_penalty)
+                    new_score = score + token_log_prob
+                
+                    all_candidates.append((new_seq, new_score))
+        
+            # Select top beam_width candidates from all expansions
+            # Apply length penalty for fair comparison
+            all_candidates.sort(key=lambda x: x[1] / (len(x[0]) ** length_penalty), reverse=True)
+            beams = all_candidates[:beam_width]
+    
+        # Convert to final format with actual probabilities
+        results = []
+        for seq, log_score in beams:
+            # Convert log probability to probability
+            probability = torch.exp(torch.tensor(log_score)).item()
+            results.append((seq, probability, log_score))
+    
+        return results
+
+
+    @torch.no_grad()
+    def generate_beam(self, idx, max_new_tokens, beam_width=5, temperature=1.0):
+        """
+        Wrapper for beam_search that returns format compatible with generate()
+        Returns the best beam result.
+        """
+        results = self.beam_search(idx, max_new_tokens, beam_width, temperature)
+        best_seq, best_prob, _ = results[0]
+        return best_seq.unsqueeze(0), best_prob
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, 
@@ -321,9 +409,11 @@ class GPT(nn.Module):
             - generated_tokens: Tensor of shape (B, T+max_new_tokens)
             - sequence_probability: Float probability of the generated sequence
         """
+        if use_beam_search:
+            return self.generate_beam(idx, max_new_tokens, beam_width, temperature)
         # Initialize log probability accumulator
         log_prob_sum = 0.0
-    
+        
         # If fixed_response provided, validate it
         if fixed_response is not None:
             if len(fixed_response) != max_new_tokens:
