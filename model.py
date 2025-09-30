@@ -392,7 +392,9 @@ class GPT(nn.Module):
 
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, 
-             fixed_response: Optional[List[int]] = None) -> Tuple[torch.Tensor, float]:
+         fixed_response: Optional[List[int]] = None,
+         use_beam_search: bool = False,
+         beam_width: int = 5) -> Tuple[torch.Tensor, float]:
         """
         Generate a sequence of tokens and return both the sequence and its probability.
     
@@ -403,6 +405,8 @@ class GPT(nn.Module):
             top_k: If set, only sample from top k tokens
             fixed_response: Optional list of token indices to generate instead of sampling
                        If provided, computes probability of this specific sequence
+            use_beam_search: If True, use beam search instead of sampling
+            beam_width: Beam width for beam search (if used)
     
         Returns:
             Tuple of (generated_tokens, sequence_probability)

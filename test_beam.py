@@ -27,7 +27,7 @@ def test_beam_search():
         prompt_ids = torch.tensor(enc.encode(prompt)).unsqueeze(0)
         
         # Greedy search (baseline)
-        print("\nGREEDY SEARCH (temperature=0.001):")
+        print("\nGreedy Search (temperature=0.001):")
         output, prob = model.generate(prompt_ids, max_new_tokens=15, temperature=0.001)
         greedy_text = enc.decode(output[0].tolist())
         print(f"  Text: {greedy_text}")
@@ -36,7 +36,7 @@ def test_beam_search():
         
         # Beam search with different beam widths
         for beam_width in [3, 5]:
-            print(f"\nBEAM SEARCH (width={beam_width}):")
+            print(f"\nBeam Search (width={beam_width}):")
             results = model.beam_search(prompt_ids, max_new_tokens=5, beam_width=beam_width, temperature=1.0)          
             # Show top 3 results
             for rank, (seq, prob, log_score) in enumerate(results[:3], 1):
