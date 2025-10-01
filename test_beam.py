@@ -20,9 +20,7 @@ def test_beam_search():
     ]
 
     for prompt in prompts:
-        print("\n" + "="*70)
         print(f"PROMPT: '{prompt}'")
-        print("="*70)
         
         prompt_ids = torch.tensor(enc.encode(prompt)).unsqueeze(0)
         
@@ -37,7 +35,7 @@ def test_beam_search():
         # Beam search with different beam widths
         for beam_width in [3, 5]:
             print(f"\nBeam Search (width={beam_width}):")
-            results = model.beam_search(prompt_ids, max_new_tokens=5, beam_width=beam_width, temperature=1.0)          
+            results = model.beam_search(prompt_ids, max_new_tokens=5, beam_width=beam_width, temperature=0.001)          
             # Show top 3 results
             for rank, (seq, prob, log_score) in enumerate(results[:3], 1):
                 text = enc.decode(seq.tolist())
@@ -56,10 +54,8 @@ def compare_beam_widths():
     enc = tiktoken.get_encoding("gpt2")
     prompt = "The capital of France is"
     prompt_ids = torch.tensor(enc.encode(prompt)).unsqueeze(0)
-    print("\n" + "="*70)
-    print(f"PROMPT: '{prompt}'")
+    print(f"Prompt: '{prompt}'")
     print("Comparing different beam widths (max_new_tokens=5)")
-    print("="*70)
     for beam_width in [1, 3, 5, 10]:
         print(f"\nBeam width = {beam_width}:")
         if beam_width == 1:
@@ -69,7 +65,7 @@ def compare_beam_widths():
             print(f"  Best: {text}")
             print(f"  Probability: {prob:.10f}")
         else:
-            results = model.beam_search(prompt_ids, max_new_tokens=5, beam_width=beam_width, temperature=1.0)
+            results = model.beam_search(prompt_ids, max_new_tokens=5, beam_width=beam_width, temperature=0.001)
             best_seq, best_prob, log_score = results[0]
             text = enc.decode(best_seq.tolist())
             print(f"  Best: {text}")
