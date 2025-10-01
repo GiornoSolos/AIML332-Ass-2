@@ -8,9 +8,7 @@ import torch.nn.functional as F
 from model import GPT
 import tiktoken
 
-print("="*70)
-print("TRACING SELF-ATTENTION MECHANISM")
-print("="*70)
+print("Tracing Self-Attention Mechanism")
 
 # Load model
 model = GPT.from_pretrained('gpt2', dict(dropout=0.0))
@@ -27,9 +25,7 @@ print(f"  Dimension per head: {model.config.n_embd // model.config.n_head}")
 B, T, C = 1, 5, 768  # Batch=1, Sequence=5, Embedding=768
 x = torch.randn(B, T, C)
 
-print(f"\n" + "="*70)
-print("STEP-BY-STEP TRACE")
-print("="*70)
+print("Step-by-step Self-trace:")
 
 print(f"\n1. Input shape: {x.shape}")
 print(f"   (Batch={B}, Sequence_Length={T}, Embedding_Dim={C})")
@@ -117,9 +113,7 @@ print(f"\n10. Output projection:")
 print(f"    Shape: {y_final.shape}")
 print(f"    Final transformation before residual connection")
 
-print(f"\n" + "="*70)
-print("SUMMARY")
-print("="*70)
+print("\nSUMMARY")
 print(f"""
 The self-attention mechanism:
 1. Projects input to Q, K, V using single linear layer
@@ -135,10 +129,8 @@ Key property: Each position can attend to all previous positions,
 creating direct connections for long-range dependencies.
 """)
 
-# Real text example
 print("\n" + "="*70)
-print("REAL TEXT EXAMPLE")
-print("="*70)
+print("Real example with text:")
 
 enc = tiktoken.get_encoding("gpt2")
 text = "The cat sat on the mat"
@@ -171,5 +163,3 @@ print("Each token attends to previous tokens:")
 for i, token in enumerate(token_strs):
     can_attend_to = token_strs[:i+1]
     print(f"  '{token}' can attend to: {can_attend_to}")
-
-print("\n" + "="*70)
