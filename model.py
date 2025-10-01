@@ -302,81 +302,93 @@ class GPT(nn.Module):
         mfu = flops_achieved / flops_promised
         return mfu
     
-    #Task 3.2 Beam Search implementation
+    # Task 3.2: Beam Search implementation
     @torch.no_grad()
-    def beam_search(self, idx, max_new_tokens, beam_width=5, temperature=1.0, 
+    def beam_search(self, idx, max_new_tokens, beam_width=5, temperature=1.0,
                 length_penalty=1.0) -> List[Tuple[torch.Tensor, float, float]]:
         """
         Generate text using beam search instead of greedy sampling.
-    
+
         Beam search maintains k hypotheses (beams) and expands the k most likely
         sequences at each step, rather than greedily selecting the single best token.
-    
+        This can find higher-probability sequences than greedy search at the cost of
+        more computation.
+
         Args:
             idx: Input token indices (B, T) - batch size should be 1
             max_new_tokens: Number of tokens to generate
             beam_width: Number of beams to maintain (k)
-            temperature: Sampling temperature for logits
+            temperature: Sampling temperature for logits (lower = more deterministic)
             length_penalty: Penalty for longer sequences (>1 favors longer, <1 favors shorter)
-    
+
         Returns:
-            List of (sequence, score) tuples, sorted by score (best first)
+            List of (sequence, probability, log_score) tuples, sorted by score (best first)
+            - sequence: Token indices tensor
+            - probability: Actual probability of the sequence
+            - log_score: Log probability (more numerically stable)
         """
         if idx.size(0) != 1:
             raise ValueError("Beam search currently only supports batch size 1")
-    
+
         device = idx.device
         vocab_size = self.config.vocab_size
     
-        # Initialize beams: [(sequence, cumulative_log_prob)]
-        #Start with the input sequence
+        # Initialize beams with the input sequence
+        # Each beam is a tuple of (sequence_tensor, cumulative_log_probability)
+        # Start with log probability of 0 (probability = 1)
         beams = [(idx[0], 0.0)]
-    
+
+        # Generate tokens one at a time
         for step in range(max_new_tokens):
             all_candidates = []
-        
-            # Expand each beam
+
+            # Expand each current beam by considering all possible next tokens
             for seq, score in beams:
-                # Prepare input
+                # Prepare input for model (add batch dimension)
                 seq_input = seq.unsqueeze(0)
+                # Crop to model's context window if needed
                 idx_cond = seq_input if seq_input.size(1) <= self.config.block_size else seq_input[:, -self.config.block_size:]
-            
-                # Forward pass
+
+                # Get model predictions for next token
                 logits, _ = self(idx_cond)
                 logits = logits[:, -1, :] / temperature
-            
-                # Get log probabilities
+
+                # Convert to log probabilities for numerical stability
                 log_probs = F.log_softmax(logits, dim=-1)[0]
-            
-                # Get top beam_width candidates for this beam
+
+                # Get top beam_width most likely next tokens for this beam
                 top_log_probs, top_indices = torch.topk(log_probs, beam_width)
-            
-                # Create new candidates
+
+                # Create new candidate sequences by extending current beam
                 for i in range(beam_width):
                     token = top_indices[i]
                     token_log_prob = top_log_probs[i].item()
-                
-                    # Create new sequence
+
+                    # Append token to sequence
                     new_seq = torch.cat([seq, token.unsqueeze(0)])
-                
-                    # Calculate new score with length penalty
-                    # Score = cumulative_log_prob / (sequence_length ** length_penalty)
+
+                    # Update cumulative log probability
+                    # We use log probabilities to avoid numerical underflow:
+                    # log(P(seq)) = sum of log(P(token_i))
                     new_score = score + token_log_prob
-                
+
                     all_candidates.append((new_seq, new_score))
-        
-            # Select top beam_width candidates from all expansions
-            # Apply length penalty for fair comparison
+
+            # Select the top beam_width candidates from all expansions
+            # This is the key difference from greedy search: we keep multiple hypotheses
+            # Apply length penalty to favor longer or shorter sequences
+            # (length_penalty > 1 favors longer, < 1 favors shorter)
             all_candidates.sort(key=lambda x: x[1] / (len(x[0]) ** length_penalty), reverse=True)
             beams = all_candidates[:beam_width]
-    
-        # Convert to final format with actual probabilities
+
+        # Convert results to final format with both log and regular probabilities
         results = []
         for seq, log_score in beams:
-            # Convert log probability to probability
+            # Convert log probability back to probability
+            # P(seq) = exp(log(P(seq)))
             probability = torch.exp(torch.tensor(log_score)).item()
             results.append((seq, probability, log_score))
-    
+
         return results
 
 
@@ -413,12 +425,16 @@ class GPT(nn.Module):
             - generated_tokens: Tensor of shape (B, T+max_new_tokens)
             - sequence_probability: Float probability of the generated sequence
         """
+        # If beam search is enabled, use beam_search method instead
         if use_beam_search:
             return self.generate_beam(idx, max_new_tokens, beam_width, temperature)
+
         # Initialize log probability accumulator
+        # We use log probabilities to avoid numerical underflow with long sequences
         log_prob_sum = 0.0
-        
+
         # If fixed_response provided, validate it
+        # This mode is used for evaluation: compute P(specific_response | prompt)
         if fixed_response is not None:
             if len(fixed_response) != max_new_tokens:
                 raise ValueError(
@@ -427,47 +443,49 @@ class GPT(nn.Module):
                 )
             # Convert to tensor if needed
             if not isinstance(fixed_response, torch.Tensor):
-                fixed_response = torch.tensor(fixed_response, dtype=torch.long, 
+                fixed_response = torch.tensor(fixed_response, dtype=torch.long,
                                          device=idx.device)
-    
-        #Generation loop
+
+        # Main generation loop
         for i in range(max_new_tokens):
-            # Crop context if needed (for models with fixed context length)
+            # Crop context if needed (models have fixed maximum context length)
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
-        
-            # Forward pass through model
+
+            # Forward pass to get next token predictions
             logits, _ = self(idx_cond)
-        
-            # Get logits for the last position
+
+            # Get logits for the last position and apply temperature
+            # Lower temperature makes output more deterministic
             logits = logits[:, -1, :] / temperature
-        
+
             # Apply top-k filtering if specified
+            # This restricts sampling to only the k most likely tokens
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits[logits < v[:, [-1]]] = -float('Inf')
-        
-            # Convert to probabilities
+
+            # Convert logits to probabilities
             probs = F.softmax(logits, dim=-1)
-        
+
             # Select next token
             if fixed_response is not None:
-                # Use the specified token from fixed_response
+                # Evaluation mode: use the specified token to compute its probability
                 idx_next = fixed_response[i].unsqueeze(0).unsqueeze(0)
             else:
-                # Sample from the distribution
+                # Generation mode: sample from the probability distribution
                 idx_next = torch.multinomial(probs, num_samples=1)
-        
+
             # Compute log probability of the selected token
-            # Use log_softmax for numerical stability
+            # Using log_softmax for numerical stability
             log_probs = F.log_softmax(logits, dim=-1)
             token_log_prob = log_probs[0, idx_next[0, 0].item()].item()
             log_prob_sum += token_log_prob
-        
-            # Append sampled token to sequence
+
+            # Append selected token to sequence
             idx = torch.cat((idx, idx_next), dim=1)
-    
-        # Convert log probability sum to probability
+
+        # Convert log probability sum back to probability
         # P(sequence) = exp(sum of log probabilities)
         sequence_probability = torch.exp(torch.tensor(log_prob_sum)).item()
-    
+
         return idx, sequence_probability

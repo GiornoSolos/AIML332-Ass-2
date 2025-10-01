@@ -14,22 +14,35 @@ import time
 def show_token_probabilities(logits, selected_token_idx, tokenizer, top_k=10):
     """
     Display a bar chart of top-k token probabilities and save to file.
+
+    This function visualizes the probability distribution over tokens at a single generation step,
+    highlighting which token was actually selected by the model.
+
+    Args:
+        logits: Raw model output logits for the next token position
+        selected_token_idx: The token index that was actually selected
+        tokenizer: Tokenizer for decoding token indices to strings
+        top_k: Number of top probability tokens to display
     """
+    # Convert logits to probabilities using softmax
     probs = F.softmax(logits, dim=-1)
     top_probs, top_indices = torch.topk(probs, top_k)
     top_probs = top_probs.cpu().numpy()
     top_indices = top_indices.cpu().numpy()
-    
+
+    # Convert token indices to readable strings
     token_strings = []
     for idx in top_indices:
         token_str = tokenizer.decode([idx])
+        # Handle special characters for display
         token_str = token_str.replace('\n', '\\n').replace('\t', '\\t')
         token_strings.append(token_str[:20])
     
-    # FIX: Convert both to int for proper comparison
-    colors = ['green' if int(idx) == int(selected_token_idx) else 'blue' 
+    # Color the selected token green, others blue for visual distinction
+    colors = ['green' if int(idx) == int(selected_token_idx) else 'blue'
               for idx in top_indices]
-    
+
+    # Create and configure the bar chart
     plt.figure(figsize=(12, 6))
     bars = plt.bar(range(top_k), top_probs, color=colors)
     plt.xlabel('Token', fontsize=12)
@@ -37,23 +50,26 @@ def show_token_probabilities(logits, selected_token_idx, tokenizer, top_k=10):
     plt.title('Top 10 Token Probabilities (Green = Selected)', fontsize=14)
     plt.xticks(range(top_k), token_strings, rotation=45, ha='right')
     plt.tight_layout()
-    
+
+    # Add probability values on top of each bar
     for i, (bar, prob) in enumerate(zip(bars, top_probs)):
         plt.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                 f'{prob:.4f}', ha='center', va='bottom', fontsize=9)
-    
-    # Save to file
+
+    # Save chart to file with timestamp to avoid overwriting
     filename = f'token_probs_{int(time.time()*1000)}.png'
     plt.savefig(filename, dpi=150, bbox_inches='tight')
     print(f"\nChart saved to: {filename}")
     plt.close()
-    
+
+    # Print detailed probability information to console
     print("\n=== Top 10 Token Probabilities ===")
     for i, (token_str, prob, idx) in enumerate(zip(token_strings, top_probs, top_indices)):
         marker = " <-- SELECTED" if int(idx) == int(selected_token_idx) else ""
         print(f"{i+1}. '{token_str}' (idx={idx}): {prob:.6f}{marker}")
         
 # -----------------------------------------------------------------------------
+# Configuration parameters
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
 out_dir = 'out' # ignored if init_from is not 'resume'
 start = "\n" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
@@ -65,12 +81,13 @@ seed = 1337
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32' or 'bfloat16' or 'float16'
 compile = False # use PyTorch 2.0 to compile the model to be faster
-show_probs= False #Display token probability Distribution
-use_beam_search = False  # use Beam Search
-beam_width = 5 # beam width for Beam Search
+show_probs= False  # Display token probability distribution visualization for each generated token
+use_beam_search = False  # Use beam search algorithm instead of sampling-based generation
+beam_width = 5  # Number of beams to maintain in beam search (higher = more thorough but slower)
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
 
+# Set random seeds for reproducibility
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
@@ -87,6 +104,7 @@ if init_from == 'resume':
     gptconf = GPTConfig(**checkpoint['model_args'])
     model = GPT(gptconf)
     state_dict = checkpoint['model']
+    # Remove '_orig_mod.' prefix from compiled model keys
     unwanted_prefix = '_orig_mod.'
     for k,v in list(state_dict.items()):
         if k.startswith(unwanted_prefix):
@@ -133,36 +151,38 @@ with torch.no_grad():
     with ctx:
         for k in range(num_samples):
           if show_probs:
-                # New Generation loop with visualization
+                # Generation loop with step-by-step probability visualization
+                # This mode shows the model's token probability distribution at each generation step
                 y = x
                 for _ in range(max_new_tokens):
-                    # Crop context if needed
+                    # Crop context if needed (model has fixed context window)
                     idx_cond = y if y.size(1) <= model.config.block_size else y[:, -model.config.block_size:]
-                    
-                    # Forward pass
+
+                    # Forward pass to get next token logits
                     logits, _ = model(idx_cond)
                     logits = logits[:, -1, :] / temperature
-                    
+
                     # Apply top-k filtering if specified
                     if top_k is not None:
                         v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                         logits[logits < v[:, [-1]]] = -float('Inf')
-                    
-                    # Sample from distribution
+
+                    # Sample from probability distribution
                     probs = F.softmax(logits, dim=-1)
                     idx_next = torch.multinomial(probs, num_samples=1)
-                    
-                    # Show probabilities for this step
+
+                    # Visualize probabilities for this generation step
                     show_token_probabilities(logits[0], idx_next[0].item(), enc, top_k=10)
-                    
-                    # Append to sequence
+
+                    # Append selected token to sequence
                     y = torch.cat((y, idx_next), dim=1)
-                
+
                 print(decode(y[0].tolist()))
                 print('---------------')
 
           else:
-            #Generation that returns probability 
+            # Standard generation mode that returns the generated sequence and its probability
+            # Uses either sampling (default) or beam search (if use_beam_search=True)
             y, prob = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k,
                         use_beam_search=use_beam_search, beam_width=beam_width)
             print(decode(y[0].tolist()))

@@ -1,5 +1,6 @@
 from datasets import load_dataset
 
+#Previously used code for a personal project
 print("Downloading TinyStories dataset...")
 # Load a subset (the full dataset is huge)
 dataset = load_dataset("roneneldan/TinyStories", split="train[:5000]")  # First 5000 stories

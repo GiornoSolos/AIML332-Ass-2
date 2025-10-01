@@ -6,11 +6,11 @@ wandb_log = False
 
 init_from = 'gpt2'
 
-max_iters = 1000 # reduced for quicker testing
+max_iters = 1000 # total number of training iterations
 learning_rate = 5e-5
-batch_size = 1  # Reduced to 1 to avoid OOM errors
-gradient_accumulation_steps = 32  # Increased to maintain effective batch size
-block_size = 256  # Further reduced context window to save memory
+batch_size = 1 # this is the micro-batch size
+gradient_accumulation_steps = 32 # used to simulate larger batch sizes
+block_size = 256  # Context length
 
 dataset = 'tinystories'
 compile = False

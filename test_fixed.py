@@ -9,9 +9,8 @@ model.eval()
 enc = tiktoken.get_encoding("gpt2")
 
 # Test 1: Compare different continuations
-print("\n" + "="*70)
+
 print("TEST 1: Comparing Different Continuations")
-print("="*70)
 context = "The capital of France is"
 context_ids = torch.tensor(enc.encode(context)).unsqueeze(0)
 
@@ -34,9 +33,7 @@ for cont in continuations:
 print("\nObservation: 'Paris' should have the highest probability.")
 
 # Test 2: Effect of sequence length
-print("\n" + "="*70)
 print("TEST 2: Effect of Sequence Length")
-print("="*70)
 context = "Once upon a time"
 context_ids = torch.tensor(enc.encode(context)).unsqueeze(0)
 
@@ -51,7 +48,6 @@ sequences = [
 print(f"\nContext: '{context}'")
 print("\nHow probability changes with sequence length:\n")
 print(f"{'Length':<8} {'Probability':<20} {'Sequence'}")
-print("-" * 70)
 
 for seq in sequences:
     seq_ids = enc.encode(seq)
@@ -66,9 +62,7 @@ for seq in sequences:
 print("\nObservation: Probability decreases exponentially with length.")
 
 # Test 3: Different starting contexts
-print("\n" + "="*70)
 print("TEST 3: Same Continuation, Different Contexts")
-print("="*70)
 
 contexts_and_cont = [
     ("I think the answer is", " yes"),
@@ -95,6 +89,4 @@ for context, cont in contexts_and_cont:
 
 print("\nObservation: Same word has different probabilities in different contexts.")
 
-print("\n" + "="*70)
 print("All tests complete!")
-print("="*70)
